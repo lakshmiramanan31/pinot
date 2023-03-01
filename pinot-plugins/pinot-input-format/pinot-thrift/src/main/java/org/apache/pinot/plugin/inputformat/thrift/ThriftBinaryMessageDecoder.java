@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -21,10 +22,9 @@ public class ThriftBinaryMessageDecoder implements StreamMessageDecoder<byte[]> 
     private static final Logger LOGGER = LoggerFactory.getLogger(ThriftBinaryMessageDecoder.class);
 
     private ThriftRecordExtractor _recordExtractor;
-    private Class<?> _thriftClass;
+    private Class<? extends TBase> _thriftClass;
     private Map<String, Integer> _fieldIds = new HashMap<>();
 
-    private TBase _tObject;
 
     private TDeserializer tBinaryDeserializer;
 
@@ -32,7 +32,7 @@ public class ThriftBinaryMessageDecoder implements StreamMessageDecoder<byte[]> 
     public void init(Map<String, String> props, Set<String> fieldsToRead, String topicName) throws Exception {
 
         try {
-            _thriftClass = this.getClass().getClassLoader().loadClass(props.get("THRIFT_CLASS_NAME"));
+            _thriftClass = (Class<? extends TBase>) this.getClass().getClassLoader().loadClass(props.get("THRIFT_CLASS_NAME"));
             tBinaryDeserializer = new TDeserializer();
 
         } catch (Exception e) {
@@ -40,7 +40,7 @@ public class ThriftBinaryMessageDecoder implements StreamMessageDecoder<byte[]> 
         }
 
         Map<? extends TFieldIdEnum, org.apache.thrift.meta_data.FieldMetaData> metaDataMap =
-                FieldMetaData.getStructMetaDataMap(_tObject.getClass());
+                FieldMetaData.getStructMetaDataMap(_thriftClass);
         for (TFieldIdEnum tFieldIdEnum : metaDataMap.keySet()) {
             _fieldIds.put(tFieldIdEnum.getFieldName(), Short.toUnsignedInt(tFieldIdEnum.getThriftFieldId()));
         }
@@ -62,11 +62,17 @@ public class ThriftBinaryMessageDecoder implements StreamMessageDecoder<byte[]> 
     @Override
     public GenericRow decode(byte[] payload, int offset, int length, GenericRow destination) {
         try {
-            tBinaryDeserializer.deserialize(_tObject, payload);
-            return _recordExtractor.extract(_tObject, destination);
-
+            TBase<?, ?> tObject = _thriftClass.getDeclaredConstructor().newInstance();
+            tBinaryDeserializer.deserialize(tObject, payload);
+            return _recordExtractor.extract(tObject, destination);
         } catch (TException e) {
             LOGGER.error("Error while deserializing thrift binary message ", e);
+        } catch (InstantiationException | IllegalAccessException e) {
+            LOGGER.error("Error while creating a new TBase instance ", e);
+        } catch (InvocationTargetException e) {
+            LOGGER.error("Error while creating a new TBase instance ", e);
+        } catch (NoSuchMethodException e) {
+            LOGGER.error("Error while creating a new TBase instance ", e);
         }
         return null;
     }
